@@ -4,7 +4,7 @@ import { componentBlockSchema } from "@/lib/schemas";
 function StatCard({ props }: { props: Record<string, unknown> }) {
   return (
     <article className="rich-card stat-card">
-      <span>{String(props.label ?? "Metric")}</span>
+      <span className="meta">{String(props.label ?? "Metric")}</span>
       <strong>{String(props.value ?? "—")}</strong>
       {props.detail ? <small>{String(props.detail)}</small> : null}
     </article>
@@ -27,7 +27,7 @@ function DataTable({ props }: { props: Record<string, unknown> }) {
   return (
     <div className="table-wrap rich-card">
       <table>
-        <thead><tr>{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
+        <thead><tr>{columns.map((column) => <th className="meta" key={column}>{column}</th>)}</tr></thead>
         <tbody>{rows.map((row, rowIndex) => (
           <tr key={rowIndex}>{columns.map((_, index) => <td key={index}>{String(row[index] ?? "")}</td>)}</tr>
         ))}</tbody>

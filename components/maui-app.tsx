@@ -12,7 +12,7 @@ const EMPTY: ConversationState = { version: 1, messages: [], canvas: [] };
 
 function MessageView({ message }: { message: Message }) {
   return (
-    <article className={`message ${message.role}`} aria-label={`${message.role} message`}>
+    <article className={`message ${message.role} ${message.status === "streaming" ? "streaming" : ""}`} aria-label={`${message.role} message`}>
       {message.content.map((block, index) => {
         if (block.type === "text") return <ReactMarkdown key={index}>{block.text}</ReactMarkdown>;
         if (block.type === "component") return <RichRenderer block={block} key={index} />;
@@ -145,19 +145,16 @@ export function MauiApp() {
       <section className={`canvas-pane ${activePane === "canvas" ? "mobile-active" : ""}`} aria-label="Canvas">
         <header><span className="brand">maui</span></header>
         <div className="canvas-content">
-          {state.canvas.length ? state.canvas.map((block, index) => <RichRenderer block={block} key={index} />) : (
-            <div className="canvas-empty"><LayoutPanelLeft size={25} strokeWidth={1.4} /><h1>Your canvas</h1><p>Charts, tables, files, and other working views will appear here.</p></div>
-          )}
+          {state.canvas.map((block, index) => <RichRenderer block={block} key={index} />)}
         </div>
       </section>
 
       <section className={`chat-pane ${activePane === "chat" ? "mobile-active" : ""}`} aria-label="Chat">
         <header className="chat-header">
-          <span>Conversation</span>
+          <span className="meta">Conversation</span>
           <button onClick={reset} aria-label="New conversation" title="New conversation"><Plus size={18} /></button>
         </header>
         <div className="messages" aria-live="polite">
-          {!state.messages.length ? <div className="chat-empty"><h2>What are we working on?</h2><p>Ask a question or describe what you want to make.</p></div> : null}
           {state.messages.map((message) => <MessageView message={message} key={message.id} />)}
           <div ref={endRef} />
         </div>
