@@ -65,3 +65,9 @@ strategy: play the designer and gain first-hand experience
 - need to replicate a basic AUI framework
 
 ### case study: designing thermostat agent
+
+### case study: weekend planner
+
+### case study: weight tracker
+
+### case study: kanban
