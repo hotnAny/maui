@@ -43,3 +43,25 @@ Define what this custom agent does, including its behavior, capabilities, and an
 - the authoring workflow is unclear
 - no way to specify GenUI (its agent lacks such abilities)
 - no way to specify human-agent workflow (or is there a need for this?)
+
+---
+
+## tenets
+- chat-native, gui on-demand
+	- need to verify this paradigm
+- AXE's job is specifying agents' behaviors
+	- what aspects of agentic behaviors a design needs to specify and how?
+
+==========
+
+## there's no next figma.
+- specialized tools are needed mainly because direct manipulation is needed
+- for AUI, direct manipulation is often secondary or minimal
+
+## 🪓 AXE: Agentic eXperience Engineer
+
+
+strategy: play the designer and gain first-hand experience
+- need to replicate a basic AUI framework
+
+### case study: designing thermostat agent
