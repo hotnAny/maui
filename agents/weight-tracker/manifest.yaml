@@ -1,0 +1,70 @@
+# Weight tracker — agent manifest (v0 case study)
+#
+# Focus of this file: the interaction model (interaction.fsm) and the generative UI
+# contract (genui). Everything else is the minimum needed for those two to compile.
+# Full set of designer-owned sections: .agent/manifest-ownership-triage.md
+# Compilation semantics (fsm -> claude-agent-spec, pattern -> A2UI): .agent/compilation-rules.md
+
+agent:
+  id: weight-tracker
+  purpose: log daily body weight; show progress over the past week
+  invocation: "/weight-tracker [kg]"
+
+tools:
+  # canonical trigger names in the fsm resolve against these (compile rule R1)
+  - name: log_weight
+    desc: append a weight entry for today
+    input: { kg: number }
+    output: { ok: bool }
+
+data:
+  # shared data model the patterns bind to; A2UI paths (refreshed per compile rule R3)
+  /trend/points: "[{date, kg}] — past 7 days, oldest first"
+  /trend/delta_kg: "number"
+  /trend/latest_kg: "number | null — most recent logged weight"
+  /entry/kg: "number — two-way bound to the input field"
+
+interaction:
+  fsm:
+    initial: s0
+    states:
+      s0:
+        desc: initial
+      s1:
+        desc: dashboard-only
+        ui: trend-line-dashboard[input=false]
+        end: true   # machine done for this invocation; the surface persists, stacked
+                    # above the prompt textbox, and chat stays live — a later chat msg
+                    # starts a new run at s0
+      s2:
+        desc: dashboard with a weight input field
+        ui: trend-line-dashboard[input=true]
+    transitions:
+      s0 -> s1:
+        chat: { desc: enter a weight number, name: log_weight(kg) }  # /weight-tracker 67.8
+      s0 -> s2:
+        chat: { desc: no additional input, name: open_tracker }      # /weight-tracker
+      s2 -> s1:
+        ui: { name: log_weight(kg) }                                 # the Log button
+        chat: { desc: enter a weight number, name: log_weight(kg) }
+        # both channels, same canonical name, same destination
+
+genui:
+  catalog: weight-tracker/v1  # custom A2UI catalog; LineChart is not in the standard one
+  patterns:
+    - id: trend-line-dashboard
+      desc: weight trend line over the past seven days
+      params: { input: bool }
+      binds: [/trend/points, /trend/delta_kg, /trend/latest_kg, /entry/kg]
+      layout: |               # pattern language; rules in .agent/compilation-rules.md
+        Card #root:
+          Column:
+            Text #title: "past 7 days"
+            LineChart #trend: points=@/trend/points
+            Text #delta: "7-day change: {@/trend/delta_kg} kg"
+            ?input Row #entry:
+              NumberField #kg: value=@/entry/kg, label="kg"
+              Button #log: "Log" -> event log_weight
+      events:
+        - log_weight(kg=@/entry/kg)  # joins the fsm alphabet: fires s2 -> s1
+      fallback: "past 7 days: {@/trend/delta_kg} kg change, latest {@/trend/latest_kg} kg"
