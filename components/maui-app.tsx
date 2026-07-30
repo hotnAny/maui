@@ -4,11 +4,36 @@ import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 import { ArrowUp, LayoutPanelLeft, MessageCircle, Plus, Square } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import type { ConversationState, Message, StreamEvent } from "@/lib/domain";
+import type { A2UIMessage } from "@/lib/agent/a2ui";
 import { applyCanvasUpdate, createMessage, textFromContent } from "@/lib/conversation";
+import { A2UIRenderer } from "./a2ui-renderer";
 import { RichRenderer } from "./rich-renderer";
 
 const STORAGE_KEY = "maui:conversation:v1";
+const AGENT_STORAGE_KEY = "maui:agent-surface:v1";
 const EMPTY: ConversationState = { version: 1, messages: [], canvas: [] };
+
+type AgentSurface = {
+  agent: string;
+  state: string;
+  end: boolean;
+  a2ui: A2UIMessage[];
+  eventBindings: Record<string, Record<string, string>>;
+};
+
+type AgentResponse =
+  | { handled: false }
+  | (Omit<AgentSurface, "agent"> & { handled: true; text: string });
+
+async function callAgent(body: Record<string, unknown>): Promise<AgentResponse> {
+  const response = await fetch("/api/agent", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error("The agent request failed.");
+  return (await response.json()) as AgentResponse;
+}
 
 function MessageView({ message }: { message: Message }) {
   return (
@@ -26,6 +51,8 @@ function MessageView({ message }: { message: Message }) {
 
 export function MauiApp() {
   const [state, setState] = useState<ConversationState>(EMPTY);
+  const [agentSurface, setAgentSurface] = useState<AgentSurface | null>(null);
+  const [agentBusy, setAgentBusy] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [draft, setDraft] = useState("");
   const [activePane, setActivePane] = useState<"canvas" | "chat">("chat");
@@ -40,6 +67,10 @@ export function MauiApp() {
         if (value.version === 1 && Array.isArray(value.messages) && Array.isArray(value.canvas)) setState(value);
       }
     } catch { localStorage.removeItem(STORAGE_KEY); }
+    try {
+      const storedSurface = localStorage.getItem(AGENT_STORAGE_KEY);
+      if (storedSurface) setAgentSurface(JSON.parse(storedSurface) as AgentSurface);
+    } catch { localStorage.removeItem(AGENT_STORAGE_KEY); }
     setHydrated(true);
   }, []);
 
@@ -48,15 +79,81 @@ export function MauiApp() {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [state, hydrated]);
 
+  useEffect(() => {
+    if (!hydrated) return;
+    if (agentSurface) localStorage.setItem(AGENT_STORAGE_KEY, JSON.stringify(agentSurface));
+    else localStorage.removeItem(AGENT_STORAGE_KEY);
+  }, [agentSurface, hydrated]);
+
+  function appendAssistantNote(text: string) {
+    setState((current) => ({ ...current, messages: [...current.messages, createMessage("assistant", text, "complete")] }));
+  }
+
+  /** Route a message/event to the agent runtime; returns false if it didn't handle it. */
+  async function runAgent(agent: string, body: Record<string, unknown>) {
+    setAgentBusy(true);
+    try {
+      const result = await callAgent({ agent, ...body });
+      if (!result.handled) return false;
+      setAgentSurface({ agent, state: result.state, end: result.end, a2ui: result.a2ui, eventBindings: result.eventBindings });
+      if (result.text) appendAssistantNote(result.text);
+      return true;
+    } finally {
+      setAgentBusy(false);
+    }
+  }
+
+  async function onAgentEvent(name: string, payload: Record<string, unknown>) {
+    if (!agentSurface || agentBusy) return;
+    try {
+      // R4 — ui channel: the event bypasses the model and hits the runtime directly.
+      const handled = await runAgent(agentSurface.agent, {
+        state: agentSurface.end ? null : agentSurface.state,
+        channel: "ui",
+        trigger: { name, payload },
+      });
+      if (!handled) appendAssistantNote(`The ${agentSurface.agent} agent could not handle that action here.`);
+    } catch {
+      appendAssistantNote("The agent runtime is unavailable right now.");
+    }
+  }
+
   async function sendMessage(event?: FormEvent) {
     event?.preventDefault();
     const text = draft.trim();
-    if (!text || abortRef.current) return;
+    if (!text || abortRef.current || agentBusy) return;
     const userMessage = createMessage("user", text, "complete");
-    const assistantMessage = createMessage("assistant", "", "streaming");
     const nextMessages = [...state.messages, userMessage];
     setDraft("");
-    setState((current) => ({ ...current, messages: [...current.messages, userMessage, assistantMessage] }));
+    setState((current) => ({ ...current, messages: [...current.messages, userMessage] }));
+
+    // Agent entry: a `/agent-id [args]` invocation starts a new run; while a surface is
+    // live, plain chat is offered to the agent first (R4) and falls through if unhandled.
+    const slash = text.match(/^\/([\w-]+)\s*(.*)$/);
+    if (slash || agentSurface) {
+      const agent = slash ? slash[1] : agentSurface!.agent;
+      try {
+        const handled = await runAgent(agent, {
+          state: slash || agentSurface!.end ? null : agentSurface!.state,
+          channel: "chat",
+          message: slash ? slash[2] : text,
+        });
+        if (handled) return;
+        if (slash) {
+          appendAssistantNote(`The ${agent} agent did not recognize that request.`);
+          return;
+        }
+      } catch {
+        appendAssistantNote(slash ? `No agent named ${agent} is available.` : "The agent runtime is unavailable right now.");
+        if (slash) return;
+      }
+    }
+    await streamChat(nextMessages);
+  }
+
+  async function streamChat(nextMessages: Message[]) {
+    const assistantMessage = createMessage("assistant", "", "streaming");
+    setState((current) => ({ ...current, messages: [...current.messages, assistantMessage] }));
 
     const abort = new AbortController();
     abortRef.current = abort;
@@ -127,6 +224,7 @@ export function MauiApp() {
     abortRef.current?.abort();
     abortRef.current = null;
     setState(EMPTY);
+    setAgentSurface(null);
     setDraft("");
   }
 
@@ -158,8 +256,22 @@ export function MauiApp() {
           {state.messages.map((message) => <MessageView message={message} key={message.id} />)}
           <div ref={endRef} />
         </div>
+        {agentSurface ? (
+          <aside className={`agent-surface ${agentBusy ? "busy" : ""}`} aria-label={`${agentSurface.agent} surface`}>
+            <header className="agent-surface-header">
+              <span className="meta">{agentSurface.agent}</span>
+              <button type="button" onClick={() => setAgentSurface(null)} aria-label="Dismiss agent surface" title="Dismiss">×</button>
+            </header>
+            <A2UIRenderer
+              messages={agentSurface.a2ui}
+              eventBindings={agentSurface.eventBindings}
+              onEvent={(name, payload) => void onAgentEvent(name, payload)}
+              disabled={agentBusy}
+            />
+          </aside>
+        ) : null}
         <form className="composer" onSubmit={sendMessage}>
-          <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={onComposerKeyDown} placeholder="Message maui" rows={1} aria-label="Message" />
+          <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={onComposerKeyDown} placeholder="Message maui — try /weight-tracker" rows={1} aria-label="Message" />
           {isStreaming ? (
             <button type="button" className="send-button" onClick={() => abortRef.current?.abort()} aria-label="Stop response"><Square size={13} fill="currentColor" /></button>
           ) : (

@@ -46,6 +46,27 @@ button { color: inherit; }
 .note-card strong { font-size: 14px; }.note-card p { color: var(--muted); line-height: 1.5; margin-bottom: 0; }
 .table-wrap { overflow: auto; padding: 0; grid-column: 1 / -1; }.table-wrap table { border-collapse: collapse; width: 100%; font-size: 13px; }.table-wrap th, .table-wrap td { text-align: left; padding: 11px 13px; border-bottom: 1px solid var(--line); }.table-wrap th { font-weight: 400; }
 .fallback { color: var(--muted); }.mobile-header { display: none; }
+.agent-surface { margin: 0 16px; animation: rise .3s ease both; }
+.agent-surface.busy { opacity: .6; pointer-events: none; }
+.agent-surface-header { display: flex; align-items: center; justify-content: space-between; padding: 0 2px 5px; }
+.agent-surface-header button { border: 0; background: transparent; width: 22px; height: 22px; border-radius: 6px; cursor: pointer; color: var(--muted); line-height: 1; }
+.agent-surface-header button:hover { background: var(--canvas); }
+.a2ui-card { padding: 13px 15px; }
+.a2ui-column { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.a2ui-row { display: flex; align-items: flex-end; gap: 8px; }
+.a2ui-text { margin: 0; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.a2ui-empty { margin: 0; }
+.a2ui-chart { width: 100%; height: auto; display: block; }
+.a2ui-chart-line { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.a2ui-chart-dot { fill: var(--ink); stroke: var(--paper); stroke-width: 2; }
+.a2ui-chart-baseline { stroke: var(--line); stroke-width: 1; }
+.a2ui-chart-crosshair { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 3; }
+.a2ui-chart-label { font: 10px var(--mono); fill: var(--muted); font-variant-numeric: tabular-nums; }
+.a2ui-field { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.a2ui-field input { border: 1px solid var(--line); border-radius: 9px; padding: 7px 10px; font-size: 14px; font-family: var(--sans); outline: 0; width: 100%; font-variant-numeric: tabular-nums; }
+.a2ui-field input:focus { border-color: var(--ink); }
+.a2ui-button { border: 0; background: var(--ink); color: var(--paper); border-radius: 9px; padding: 8px 15px; font-size: 13px; cursor: pointer; flex: 0 0 auto; }
+.a2ui-button:disabled { background: #d2d2d2; cursor: default; }
 button:focus-visible, a:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 @keyframes pulse { 50% { opacity: .3; } }
 @keyframes blink { 50% { opacity: 0; } }

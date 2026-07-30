@@ -13,6 +13,16 @@ export const canvasUpdateSchema = z.object({
   panels: z.array(componentBlockSchema).optional(),
 });
 
+export const agentRequestSchema = z.object({
+  agent: z.string().regex(/^[\w-]+$/),
+  state: z.string().nullable(),
+  channel: z.enum(["chat", "ui"]),
+  trigger: z
+    .object({ name: z.string(), payload: z.record(z.string(), z.unknown()).default({}) })
+    .optional(),
+  message: z.string().max(2_000).optional(),
+});
+
 export const chatRequestSchema = z.object({
   messages: z
     .array(
