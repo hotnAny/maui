@@ -10,12 +10,31 @@ Of the aspects a full agent manifest covers, roughly half are already owned by t
 the harness and should be left alone, most of the rest are conventional designer-owned
 configuration that AXE should adopt rather than reinvent, and only two are genuinely
 unspecified anywhere: **the interaction model** (initiative, turn shape, gates, repair) and
-**the presentation contract** (which UI a response may render, when, and how the user's
-manipulation of that UI flows back in). Those two are AXE's territory. Memory is a middle
+**the generative user interface** (GenUI: which UI a
+response may render, when, and how the user's manipulation of that UI flows back in). Those
+two are AXE's territory. Memory is a middle
 case: designers should specify memory *semantics* (what is worth remembering, who owns it,
 what the user can correct) and never memory *mechanics*.
 
+
+
 ## The triage
+
+*Where the owner column comes from — three signals of unequal strength:*
+
+1. *Rows marked **Designer** with conventional shape (#1, 2, 5, 7, 10, 12, 14, 16): the
+   survey evidence in `non-expert-agent-builders-report.md` — at least two of the five
+   surveyed platforms (Copilot Studio, Zapier Agents, Relevance AI, Voiceflow, n8n) already
+   expose the aspect as designer-facing configuration; per-aspect citations are in that
+   report's aspect table.*
+2. *Rows marked **Platform** (#4, 6, 8, 9, 11, 13, 15, 17): an absorption argument — these
+   were hand-tuned, designer-facing knobs in earlier tooling and have since moved into
+   harness and SDK defaults. This is an observed trend, not a citation-backed claim; it is
+   the weakest link in the triage and the one worth a dedicated evidence pass.*
+3. *The "unspecified today" claim for #18–19 is a negative result from the same survey:
+   none of the five platforms offers a first-class surface for initiative, turn shape, or
+   repair, nor for when-a-GUI-may-render policy. Voiceflow flows and Copilot Studio topics
+   are the nearest misses, and §C1 argues they are scripts, not contracts.*
 
 | # | Aspect | Owner | Why |
 |---|---|---|---|
@@ -37,7 +56,7 @@ what the user can correct) and never memory *mechanics*.
 | 16 | Evaluation examples and adversarial cases | **Designer** | Domain judgment; the cheapest high-value artifact |
 | 17 | Versioning, draft/publish, monitoring | Platform | Lifecycle plumbing |
 | 18 | **Interaction model** | **Designer — unspecified today** | Gap C1 |
-| 19 | **Presentation / UI contract** | **Designer — unspecified today** | Gap C2 |
+| 19 | **Generative UI (GenUI) contract** | **Designer — unspecified today** | Gap C2 |
 
 ## A. Leave it alone
 
@@ -126,7 +145,7 @@ interaction:
     correction_becomes: new_turn | state_patch
 ```
 
-### C2. Presentation contract
+### C2. Generative UI (GenUI) contract
 
 Everyone building GenUI has a component registry; nobody has a *specification* of when the
 agent may reach for which component, and — the bigger hole — **how a user's manipulation of a
@@ -135,7 +154,7 @@ canvas shows an editable timeline and the user drags an event, that gesture has 
 agent as an intent, or the UI is decoration.
 
 ```yaml
-presentation:
+genui:
   default_surface: chat | canvas
   prose_vs_gui:
     prefer_gui_when: ["time series", "comparison over 3+ items", "a draft awaiting approval"]
@@ -159,6 +178,24 @@ intent it `emits` (so manipulation is not a dead end), and every template declar
 `lifecycle` (so the canvas does not accumulate stale panels — the persistence asymmetry between
 a durable canvas and an ephemeral chat is unaddressed everywhere).
 
+**Doesn't A2UI make this unnecessary?** No — it makes it compilable. Google's
+[A2UI](https://a2ui.org/) (open-sourced December 2025,
+[v0.9 as of July 2026](https://www.infoq.com/news/2026/07/google-a2ui-genui/)) standardizes
+the *mechanics*: the agent emits a declarative JSON payload describing components and a data
+model instead of code, the client maps it to native widgets (Lit/Angular on web, Flutter's
+GenUI SDK on mobile), and user interactions flow back as events. In this triage's terms that
+is Bucket-A material — rendering transport, platform-owned, same reasoning as #6 and #13.
+What A2UI deliberately does not decide is everything in the `genui:` section above: *when*
+the agent may reach for a component instead of prose, which templates this agent is allowed
+to use, panel lifecycle, the prose fallback, and — the part that matters most — what a user's
+gesture *means*. A2UI hands the event back; something still has to say that dragging the date
+range re-enters the agent as `change_range(from, to)` rather than arriving as dead data. So
+A2UI strengthens the case for the designer-facing contract rather than obviating it: it gives
+`genui.templates` a standard compile target instead of a bespoke component registry, and it
+lets AXE stay out of the rendering business entirely. Posture: adopt A2UI as the wire format
+underneath; keep the policy layer as the designer's surface.
+([intro post](https://developers.googleblog.com/introducing-a2ui-an-open-project-for-agent-driven-interfaces/))
+
 ## On the FSM idea
 
 The to-do proposed an FSM for the interaction model. My read: **an FSM is the right primitive
@@ -176,7 +213,7 @@ encounters a situation the designer never imagined — which an FSM does not.
 
 `agents/weight-tracker/scratch-pad.md` specifies one task: log weight → status + trend UI.
 Under the triage, that decomposes to `tools.log_weight` (Bucket B, conventional),
-`presentation.templates.weight_trend` (gap C2), and — the part the scratch-pad leaves silent —
+`genui.templates.weight_trend` (gap C2), and — the part the scratch-pad leaves silent —
 whether the agent nudges at 9pm when nothing was logged (gap C1, `initiative`), and what
 happens when the user says "no, that was 67.5" (gap C1, `repair`). Two of four live in the
 gaps. That ratio is the argument for the note.
@@ -197,7 +234,8 @@ runtime hooks at all.
    Writing `interaction:` and `presentation:` for a real agent will falsify the schemas above
    faster than more surveying.
 2. **Wire the block vocabulary end-to-end** (structured output in the chat route + registry
-   render) so `presentation.templates` has something to compile into.
+   render) so `genui.templates` has something to compile into — and evaluate A2UI as that
+   wire format before inventing one.
 3. **Build the back channel next, not last.** `interactive.emits` is the claim that separates
    this from every existing GenUI registry; if it is hard, better to know now.
 4. **Do not add manifest fields for anything in Bucket A.** If a Bucket-A field feels
