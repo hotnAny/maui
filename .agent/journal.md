@@ -2,6 +2,21 @@
 
 ## 2026-08-15
 
+## 2026-08-05 (cont. 2)
+
+**Done**
+- Iteration in the pattern mini-language, closing the library's gap 1: `*@/path` repeats a subtree per item, `@./field` resolves against the current item, ids gain a `-<index>` suffix. Implemented as a source-to-source expansion before the existing walker, so nested repeats fall out for free.
+- The non-obvious half: every row emits the *same* event name, so the surface-level name→path map cannot say which row fired. A control inside a repeat now carries its own resolved bindings on the component (`action.event.bindings`, a maui extension to the A2UI action shape) and the renderer prefers those. Proven end to end by a new renderer test — compile a two-row surface, click the second button, assert it sends `v2`.
+- Expansion is server-side on purpose: R3 re-materializes data and re-sends the surface on every state entry, so a static tree per surface is sufficient and the client stays dumb.
+
+**Open**
+- Pattern curation is unresolved and now sits in the back-log with the full argument. Short version: patterns are welded to absolute data paths, so a `patterns/` directory would not make them reusable — the party planner needs the candidate list four times over four different paths *within one agent*. Sequence recommended: (1) generate the inventory from manifests, (2) add path parameters, (3) only then move to files resolved by id. xac deferred all three.
+- Library gaps 2 (thin catalog) and 3 (no pattern parameters) still open, both deliberately: components are cheap to add but guessing at props before a real pattern needs them is waste, and the parameter list should be designed from a real reuse attempt.
+- `candidate-list` exists only as a tested shape, not as a pattern — nothing defines it, because no agent does.
+
+**Next**
+- Unchanged and still the crux: think hard about the CUJ → FSM protocol. Running the party planner through it end to end is the pressure test, and it now also forces the parameter question, since its four candidate lists are exactly the evidence step 2 needs.
+
 ## 2026-08-05 (cont.)
 
 **Done**

@@ -1,6 +1,7 @@
 ## to-do
 
 ## back-log
+- rethink how we curate patterns. today: patterns live inline in each manifest, the library is a hand-written index pointing at them, and reuse means copy-and-rebind because patterns are welded to absolute data paths. the sequence discussed was (1) generate the inventory from the manifests, (2) add path parameters so one pattern serves several data paths, (3) only then move patterns into `patterns/*.yaml` resolved by id. worth revisiting once a second agent has actually tried to reuse something — that attempt is the evidence for what a pattern's parameters should be.
 - deploy on vercel and allow writing to github to simulate db
 
 ## done
