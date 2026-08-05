@@ -2,6 +2,24 @@
 
 ## 2026-08-15
 
+## 2026-08-05 (cont.)
+
+**Done**
+- `.agent/cuj-to-fsm.md` — the protocol from a CUJ (user, goal, tasks, success criteria) to a compilable machine. Nine steps; the load-bearing one is step 1, which stops creators turning every task into a state ("is there something on screen they act on?" — no means it's an edge). Step 8 adds a traceability check: every task maps to ≥1 edge, every edge traces to a task, a verdict, or an escape.
+- `.agent/pattern-library.md` — started, seeded with the weight tracker's two patterns. Entries **point at** the manifests that define them rather than copying them; with two patterns a copy is just a second source of truth. Names what the party planner will need and what blocks it.
+- `agents/kids-party-planner/scratch-pad.md` annotated: its CUJ is missing success criteria (so nothing can carry `end: true`), and three decisions are unsettled before an FSM can be drawn.
+
+**Open**
+- The protocol's steps 1–2 rest on one and a half case studies. The hub shape has never been compiled; the weight tracker is degenerate (one task) and proves nothing about it.
+- Two language gaps now block the pattern library, not just the party planner: `layout:` has no iteration (so "one row per candidate" is unexpressible — every selection task in a planning agent has this shape), and patterns have no parameters beyond `?ui-state` variations (`value-check` hardcodes `kg`, so the next agent copies and renames it).
+- Pattern resolution deferred on purpose: patterns stay inline per manifest until a third agent needs a second-hand one, so the shape of that first real reuse can decide whether patterns take parameters.
+- Party planner blockers, unanswered: where candidate data comes from (tools vs. model knowledge vs. user lists — `do:` can't be written without this), cross-cutting constraints like budget (the parked `policies:` sketch), and whether a plan persists across invocations (R5 ends the machine per invocation; a party plan is a document a parent returns to for weeks).
+
+**Next**
+- **Think hard about the CUJ → FSM protocol — xac's read is that this is the crux of creating maui-based agents.** Everything else (notation, compiler, README, patterns) is machinery underneath it; the protocol is what a non-expert creator actually holds. It is currently nine steps of heuristics with almost no evidence behind steps 1–2.
+- The concrete way to pressure-test it: run the party planner through the protocol end to end and see where it breaks. That forces the hub shape, the missing success criteria, and the iteration gap all at once.
+- Or, if tooling first: add iteration to the pattern mini-language — it unblocks the candidate-list pattern every planning agent needs.
+
 ## 2026-08-05
 
 **Done**

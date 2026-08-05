@@ -1,8 +1,12 @@
 ## to-do
 
 ## back-log
+- deploy on vercel and allow writing to github to simulate db
 
 ## done
+- [x] the current scratch-pad is based on google's critical user journey (CUJ) framework (user, goal, tasks, success criteria)---i think we need to develop a generalizable protocol to guide an agent creator from CUJ to the formulation of the fsm (based on which to confirm or select ui patterns)
+- [x] we will start curating a ui pattern library from scratch (piggybacking the agents we will be creating). note that the format of patterns is intended to work with A2UI
+- [x] see the scratch-pad.md in agents/kids-party-planner, is it enough to compile an agnet manifest? (like before, i want to focus on how to specify interaction model (fsm) and ui patterns while leaving other attributes like memory management automatically handled)
 - [x] /weight-tracker 685
 Could not run log_weight with that input. past 7 days: 0 kg change, latest 68.5 kg
 i was expecting a ui asking me to confirm this number rather than simply rejecting it
