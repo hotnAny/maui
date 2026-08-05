@@ -3,7 +3,9 @@
 *Maintained doc. Formalized August 5, 2026 from the notation the weight tracker was already
 written in. This doc is the **authoring surface** — the shapes a designer writes. What the
 compiler does with them is `.agent/compilation-rules.md` (rules R1–R7); the running example
-is `agents/weight-tracker/manifest.yaml`.*
+is `agents/weight-tracker/manifest.yaml`. For how to *arrive* at a machine in the first
+place — CUJ to states and edges — see `.agent/cuj-to-fsm.md`, and `.agent/pattern-library.md`
+for the patterns a state can bind.*
 
 The interaction model is a flat state machine under `interaction.fsm`. Two object kinds:
 
