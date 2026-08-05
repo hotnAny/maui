@@ -1,6 +1,6 @@
-import { interpolate } from "./a2ui";
-import type { Manifest, Transition } from "./manifest";
-import { parsePatternCall, transitionsOf } from "./manifest";
+import { interpolate, setPath } from "./a2ui";
+import type { Channel, Manifest, Transition } from "./manifest";
+import { parsePatternCall, patternOf, transitionsOf } from "./manifest";
 import type { CompiledSurface } from "./pattern-compiler";
 import { compileSurface } from "./pattern-compiler";
 import { hasTool, materializeData, runTool } from "./tools";
@@ -21,35 +21,59 @@ export type AdvanceResult =
       toolResult: { name: string; ok: boolean } | null;
     };
 
-export function outgoing(manifest: Manifest, state: string, channel?: "chat" | "ui"): Transition[] {
+export function outgoing(manifest: Manifest, state: string, channel?: Channel): Transition[] {
   return transitionsOf(manifest).filter(
     (transition) => transition.from === state && (!channel || transition.channel === channel),
   );
+}
+
+/**
+ * R3 — a trigger payload lands in the data model at the destination pattern's bound path
+ * whose last segment matches the arg name (`suggested_kg` -> `/check/suggested_kg`). This
+ * is how a verdict's suggestion, or a typed weight, reaches the surface that shows it.
+ */
+function applyPayload(
+  manifest: Manifest,
+  dataModel: Record<string, unknown>,
+  ui: string | undefined,
+  payload: Record<string, unknown>,
+) {
+  if (!ui) return;
+  const binds = patternOf(manifest, parsePatternCall(ui).patternId).binds;
+  for (const [key, value] of Object.entries(payload)) {
+    const path = binds.find((candidate) => candidate.split("/").pop() === key);
+    if (path) setPath(dataModel, path, value);
+  }
 }
 
 export function advance(
   manifest: Manifest,
   agentId: string,
   currentState: string | null,
-  channel: "chat" | "ui",
+  channel: Channel,
   trigger: { name: string; payload: Record<string, unknown> },
 ): AdvanceResult {
   const from = currentState ?? manifest.interaction.fsm.initial;
   const transition = outgoing(manifest, from, channel).find((candidate) => candidate.name === trigger.name);
   if (!transition) return { handled: false };
 
-  // R1 — tool inference: a canonical name matching a declared tool compiles to that call.
-  // A name matching no tool is a pure transition (state/UI change only).
+  // R1 — the edge's tool-use half: its `do:`, or the call inferred from the trigger name.
+  // An edge with no effects is a pure transition (state/UI change only).
   let toolResult: { name: string; ok: boolean } | null = null;
-  const declared = manifest.tools.some((tool) => tool.name === trigger.name);
-  if (declared && hasTool(agentId, trigger.name)) {
-    toolResult = { name: trigger.name, ok: runTool(agentId, trigger.name, trigger.payload).ok };
+  for (const effect of transition.effects) {
+    if (!manifest.tools.some((tool) => tool.name === effect.name)) {
+      throw new Error(`Transition ${transition.from} -> ${transition.to} does undeclared tool ${effect.name}`);
+    }
+    if (!hasTool(agentId, effect.name)) continue;
+    toolResult = { name: effect.name, ok: runTool(agentId, effect.name, trigger.payload).ok };
+    if (!toolResult.ok) break; // a failed call stops the rest of the edge's work
   }
 
   // R3 — entering a state re-materializes every bound data path.
   const dataModel = materializeData(agentId);
   const stateDef = manifest.interaction.fsm.states[transition.to];
   if (!stateDef) throw new Error(`Transition to unknown state: ${transition.to}`);
+  applyPayload(manifest, dataModel, stateDef.ui, trigger.payload);
 
   let surface: CompiledSurface | null = null;
   let text = "";
@@ -80,13 +104,44 @@ export function stateConfig(manifest: Manifest, state: string | null) {
     state: current,
     instructions: `You are the ${manifest.agent.id} agent. Purpose: ${manifest.agent.purpose}. ` +
       `Current interaction state: ${stateDef?.desc ?? current}.`,
-    toolAllowlist: chatTransitions
-      .map((transition) => transition.name)
-      .filter((name) => manifest.tools.some((tool) => tool.name === name)),
+    toolAllowlist: [
+      ...new Set(
+        chatTransitions
+          .flatMap((transition) => transition.effects.map((effect) => effect.name))
+          .filter((name) => manifest.tools.some((tool) => tool.name === name)),
+      ),
+    ],
     intents: chatTransitions.map((transition) => ({
       name: transition.name,
       args: transition.args,
       desc: transition.desc ?? "",
     })),
   };
+}
+
+/**
+ * R4 — the `agent:` channel. A state with outgoing agent edges is waiting on the model's
+ * own verdict rather than on the user: the same classification step as chat, but over what
+ * the agent knows instead of over a message. `fallback` is the verdict taken when no model
+ * is available or the answer doesn't parse, so a judging state can never trap the machine.
+ */
+export function judgmentConfig(manifest: Manifest, state: string, context: Record<string, unknown>) {
+  const stateDef = manifest.interaction.fsm.states[state];
+  const verdicts = outgoing(manifest, state, "agent");
+  return {
+    state,
+    instructions: `You are the ${manifest.agent.id} agent. Purpose: ${manifest.agent.purpose}. ` +
+      `You are ${stateDef?.desc ?? state}. Decide which verdict fits, given: ${JSON.stringify(context)}.`,
+    verdicts: verdicts.map((transition) => ({
+      name: transition.name,
+      args: transition.args,
+      desc: transition.desc ?? "",
+    })),
+    fallback: verdicts.find((transition) => transition.default)?.name ?? null,
+  };
+}
+
+/** Whether the runtime, not the user, owes the machine its next move. */
+export function needsJudgment(manifest: Manifest, state: string) {
+  return outgoing(manifest, state, "agent").length > 0;
 }

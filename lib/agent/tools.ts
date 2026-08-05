@@ -46,7 +46,9 @@ const toolImplementations: Record<string, Record<string, (payload: Record<string
   "weight-tracker": {
     log_weight(payload) {
       const kg = Number(payload.kg);
-      if (!Number.isFinite(kg) || kg <= 0 || kg >= 500) return { ok: false };
+      // validity only — plausibility is the machine's job now (s4 judges, s3 asks), so a
+      // value the user was asked about and confirmed must still be writable
+      if (!Number.isFinite(kg) || kg <= 0) return { ok: false };
       const store = readStore("weight-tracker");
       store.entries.push({ date: isoDate(new Date()), kg, at: new Date().toISOString() });
       writeStore("weight-tracker", store);
@@ -76,6 +78,8 @@ export function materializeData(agentId: string): Record<string, unknown> {
         latest_kg: points.length ? points[points.length - 1].kg : null,
       },
       entry: { kg: null },
+      // filled in from a verdict's payload when the agent questions a value (R3)
+      check: { message: null, suggested_kg: null },
     };
   }
   return {};

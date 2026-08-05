@@ -27,33 +27,47 @@ stateDiagram-v2
     state "📍 s0 — initial" as s0
     state "📍 s1 — dashboard-only<br/>🖥️ trend-line-dashboard[trend-only]" as s1
     state "📍 s2 — dashboard with a weight input field<br/>🖥️ trend-line-dashboard[with-input]" as s2
+    state "📍 s3 — asking about a value that looks off<br/>🖥️ value-check" as s3
+    state "📍 s4 — judging whether the entered weight is plausible" as s4
 
     [*] --> s0
-    s0 --> s1: 👨🏻‍💻 chat: types a weight number<br/>🧰 log_weight(kg)
     s0 --> s2: 👨🏻‍💻 chat: asks for the tracker without a number
-    s2 --> s1: 👨🏻‍💻 chat: types a weight number<br/>🧰 log_weight(kg)
-    s2 --> s1: 👨🏻‍💻 ui: presses Log<br/>🧰 log_weight(kg)
+    s0 --> s4: 👨🏻‍💻 chat: types a weight number
+    s2 --> s4: 👨🏻‍💻 chat: types a weight number
+    s2 --> s4: 👨🏻‍💻 ui: presses Log
+    s4 --> s1: 🤔 agent: the value looks plausible<br/>🧰 log_weight(kg)
+    s4 --> s3: 🤔 agent: the value looks off for a body weight (default)
+    s3 --> s4: 👨🏻‍💻 chat: types a different weight
+    s3 --> s1: 👨🏻‍💻 ui: takes the suggested correction<br/>🧰 log_weight(kg)
+    s3 --> s1: 👨🏻‍💻 ui: keeps the value as entered<br/>🧰 log_weight(kg)
     s1 --> [*]
 
     class s0 primary
     class s1 success
-    class s2 neutral
+    class s2,s3,s4 neutral
 ```
 
-📍 state · 🖥️ UI pattern[state] · 👨🏻‍💻 user input · 🧰 agent tool use (absent = pure transition)
+📍 state · 🖥️ UI pattern[state] · 👨🏻‍💻 user input · 🤔 agent verdict · 🧰 agent tool use (absent = pure transition)
 
 | state | does | UI pattern[state] | end |
 |---|---|---|---|
 | `s0` | initial | — |  |
 | `s1` | dashboard-only | `trend-line-dashboard[trend-only]` | yes |
 | `s2` | dashboard with a weight input field | `trend-line-dashboard[with-input]` |  |
+| `s3` | asking about a value that looks off | `value-check` |  |
+| `s4` | judging whether the entered weight is plausible | — |  |
 
-| from | user input | agent tool use | to |
+| from | fired by | agent tool use | to |
 |---|---|---|---|
-| `s0` | chat: `log_weight(kg)` — types a weight number | `log_weight(kg)` | `s1` |
 | `s0` | chat: `open_tracker` — asks for the tracker without a number | — (pure) | `s2` |
-| `s2` | chat: `log_weight(kg)` — types a weight number | `log_weight(kg)` | `s1` |
-| `s2` | ui: `log_weight(kg)` — presses Log | `log_weight(kg)` | `s1` |
+| `s0` | chat: `log_weight(kg)` — types a weight number | — (pure) | `s4` |
+| `s2` | chat: `log_weight(kg)` — types a weight number | — (pure) | `s4` |
+| `s2` | ui: `log_weight(kg)` — presses Log | — (pure) | `s4` |
+| `s4` | agent: `plausible` — the value looks plausible | `log_weight(kg)` | `s1` |
+| `s4` | agent: `suspect(suggested_kg, message)` — the value looks off for a body weight | — (pure) | `s3` |
+| `s3` | chat: `log_weight(kg)` — types a different weight | — (pure) | `s4` |
+| `s3` | ui: `accept_suggestion(kg)` — takes the suggested correction | `log_weight(kg)` | `s1` |
+| `s3` | ui: `confirm_as_entered(kg)` — keeps the value as entered | `log_weight(kg)` | `s1` |
 
 Reaching `s1` ends the machine for this invocation. The surface persists — it stays stacked above the prompt textbox and chat stays live; a later chat message starts a new run at `s0`.
 
@@ -61,7 +75,7 @@ Reaching `s1` ends the machine for this invocation. The surface persists — it 
 
 | tool | does | input | output | callable from |
 |---|---|---|---|---|
-| `log_weight` | append a weight entry for today | `kg: number` | `ok: bool` | `s0`, `s2` |
+| `log_weight` | append a weight entry for today | `kg: number` | `ok: bool` | `s3`, `s4` |
 
 ## Data model
 
@@ -70,7 +84,9 @@ Reaching `s1` ends the machine for this invocation. The surface persists — it 
 | `/trend/points` | [{date, kg}] — past 7 days, oldest first | `trend-line-dashboard` |
 | `/trend/delta_kg` | number | `trend-line-dashboard` |
 | `/trend/latest_kg` | number \| null — most recent logged weight | `trend-line-dashboard` |
-| `/entry/kg` | number — two-way bound to the input field | `trend-line-dashboard` |
+| `/entry/kg` | number — two-way bound to the input field | `trend-line-dashboard`, `value-check` |
+| `/check/message` | string — the agent's question about a value that looks off | `value-check` |
+| `/check/suggested_kg` | number \| null — the correction the agent proposes | `value-check` |
 
 ## UI patterns
 
@@ -94,4 +110,22 @@ Card #root:
     ?with-input Row #entry:
       NumberField #kg: value=@/entry/kg, label="kg"
       Button #log: "Log" -> event log_weight
+```
+
+### `value-check`
+
+confirm or correct a value the agent thinks is off
+
+- UI states: one rendering, unnamed
+- used by: `s3` (`value-check`)
+- emits: `accept_suggestion(kg=@/check/suggested_kg)`, `confirm_as_entered(kg=@/entry/kg)`
+- fallback: {@/check/message}
+
+```
+Card #root:
+  Column:
+    Text #ask: "{@/check/message}"
+    Row #choices:
+      Button #fix: "Use {@/check/suggested_kg} kg" -> event accept_suggestion
+      Button #keep: "Keep {@/entry/kg} kg" -> event confirm_as_entered
 ```

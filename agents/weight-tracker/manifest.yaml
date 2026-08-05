@@ -3,6 +3,7 @@
 # Focus of this file: the interaction model (interaction.fsm) and the generative UI
 # contract (genui). Everything else is the minimum needed for those two to compile.
 # Full set of designer-owned sections: .agent/manifest-ownership-triage.md
+# FSM notation (what a node and an edge may contain): .agent/fsm-notation.md
 # Compilation semantics (fsm -> claude-agent-spec, pattern -> A2UI): .agent/compilation-rules.md
 
 agent:
@@ -23,38 +24,67 @@ data:
   /trend/delta_kg: "number"
   /trend/latest_kg: "number | null — most recent logged weight"
   /entry/kg: "number — two-way bound to the input field"
+  /check/message: "string — the agent's question about a value that looks off"
+  /check/suggested_kg: "number | null — the correction the agent proposes"
 
 interaction:
   fsm:
+    # notation: a node is desc + ui pattern[ui-state]; an edge is user input (chat:/ui:)
+    # or the agent's own verdict (agent:) + tool use (do:). Rules in .agent/fsm-notation.md.
     initial: s0
     states:
       s0:
         desc: initial
       s1:
         desc: dashboard-only
-        ui: trend-line-dashboard[input=false]
+        ui: trend-line-dashboard[trend-only]
         end: true   # machine done for this invocation; the surface persists, stacked
                     # above the prompt textbox, and chat stays live — a later chat msg
                     # starts a new run at s0
       s2:
         desc: dashboard with a weight input field
-        ui: trend-line-dashboard[input=true]
+        ui: trend-line-dashboard[with-input]
+      s3:
+        desc: asking about a value that looks off
+        ui: value-check
+      s4:
+        desc: judging whether the entered weight is plausible
+        # no ui: the surface stands while the agent thinks; nothing is logged yet
     transitions:
-      s0 -> s1:
-        chat: { desc: enter a weight number, name: log_weight(kg) }  # /weight-tracker 67.8
+      # desc: is the actor's move in plain words — it is what the diagram shows
       s0 -> s2:
-        chat: { desc: no additional input, name: open_tracker }      # /weight-tracker
-      s2 -> s1:
-        ui: { name: log_weight(kg) }                                 # the Log button
-        chat: { desc: enter a weight number, name: log_weight(kg) }
-        # both channels, same canonical name, same destination
+        chat: { desc: asks for the tracker without a number, name: open_tracker }  # /weight-tracker
+        do: none                                                     # pure transition
+      s0 -> s4:
+        chat: { desc: types a weight number, name: log_weight(kg) }  # /weight-tracker 67.8
+        do: none             # the value is judged before anything is written
+      s2 -> s4:
+        ui: { desc: presses Log, name: log_weight(kg) }
+        chat: { desc: types a weight number, name: log_weight(kg) }
+        do: none             # both channels route through the same check
+      s4 -> s1:
+        agent: { desc: the value looks plausible, name: plausible }
+        do: log_weight(kg)
+      s4 -> s3:
+        # default: when the agent cannot reach a verdict, ask rather than write (see N6)
+        # quoted: a comma inside a { } flow mapping would end the value
+        agent: { desc: the value looks off for a body weight, name: "suspect(suggested_kg, message)", default: true }
+        do: none
+      s3 -> s4:
+        chat: { desc: types a different weight, name: log_weight(kg) }
+        do: none             # a corrected value gets judged too
+      s3 -> s1:              # two distinct moves between the same pair of states
+        - ui: { desc: takes the suggested correction, name: accept_suggestion(kg) }
+          do: log_weight(kg)
+        - ui: { desc: keeps the value as entered, name: confirm_as_entered(kg) }
+          do: log_weight(kg)
 
 genui:
   catalog: weight-tracker/v1  # custom A2UI catalog; LineChart is not in the standard one
   patterns:
     - id: trend-line-dashboard
       desc: weight trend line over the past seven days
-      params: { input: bool }
+      states: [trend-only, with-input]  # the renderings a machine state may bind
       binds: [/trend/points, /trend/delta_kg, /trend/latest_kg, /entry/kg]
       layout: |               # pattern language; rules in .agent/compilation-rules.md
         Card #root:
@@ -62,9 +92,24 @@ genui:
             Text #title: "past 7 days"
             LineChart #trend: points=@/trend/points
             Text #delta: "7-day change: {@/trend/delta_kg} kg"
-            ?input Row #entry:
+            ?with-input Row #entry:
               NumberField #kg: value=@/entry/kg, label="kg"
               Button #log: "Log" -> event log_weight
       events:
-        - log_weight(kg=@/entry/kg)  # joins the fsm alphabet: fires s2 -> s1
+        - log_weight(kg=@/entry/kg)  # joins the fsm alphabet: fires s2 -> s4
       fallback: "past 7 days: {@/trend/delta_kg} kg change, latest {@/trend/latest_kg} kg"
+
+    - id: value-check
+      desc: confirm or correct a value the agent thinks is off
+      binds: [/check/message, /check/suggested_kg, /entry/kg]
+      layout: |
+        Card #root:
+          Column:
+            Text #ask: "{@/check/message}"
+            Row #choices:
+              Button #fix: "Use {@/check/suggested_kg} kg" -> event accept_suggestion
+              Button #keep: "Keep {@/entry/kg} kg" -> event confirm_as_entered
+      events:
+        - accept_suggestion(kg=@/check/suggested_kg)
+        - confirm_as_entered(kg=@/entry/kg)
+      fallback: "{@/check/message}"
