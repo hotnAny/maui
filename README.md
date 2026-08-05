@@ -19,6 +19,8 @@ message is sent.
 ## Commands
 
 - `npm run dev` — local development server
+- `npm run compile:agents` — regenerate each `agents/*/README.md` from its manifest
+  (`-- --check` fails instead of writing, for CI)
 - `npm run build` — production build
 - `npm run lint` — ESLint checks
 - `npm run typecheck` — strict TypeScript checks
