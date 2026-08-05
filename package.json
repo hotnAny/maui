@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "node scripts/dev.mjs",
+    "compile:agents": "tsx scripts/compile-agents.ts",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
@@ -30,6 +31,7 @@
     "eslint": "^9.0.0",
     "eslint-config-next": "^16.2.11",
     "jsdom": "^26.0.0",
+    "tsx": "^4.23.8",
     "typescript": "^5.9.0",
     "vitest": "^4.1.10"
   }
