@@ -58,7 +58,17 @@ blocked on language gaps rather than on design:
 
 - **intake form** — several fields, some optional, one submit. Straightforward today.
 - **candidate list** — N options (venues, cakes, activities) with a select action per row.
-  **Blocked**: the layout language has no repeat construct (see gaps).
+  **Unblocked** — the repeat construct exists and is tested end to end (compile → wire →
+  click sends the clicked row's item). It stays "wanted" rather than becoming an entry
+  because entries point at the manifest that defines a pattern, and no agent defines this
+  one yet. The tested shape:
+
+  ```
+  *@/venues/candidates Row #venue:
+    Text #name: "{@./name}"
+    Button #pick: "Choose" -> event select_venue
+  ```
+  with `events: [select_venue(id=@./id)]`.
 - **plan summary** — the hub's surface: the whole artifact with filled and empty slots,
   each slot a way back into its decision. Needs a "this slot is still empty" rendering,
   which is a UI-state variation per slot — combinatorial, and the first real test of whether
@@ -66,13 +76,15 @@ blocked on language gaps rather than on design:
 
 ## Known gaps this library is blocked on
 
-1. **No iteration.** `layout:` is a static tree, so "one row per candidate in
-   `@/venues/candidates`" is unexpressible. Every selection task in a planning agent is
-   exactly that shape. This is the single biggest blocker on growing the library, and it is
-   a change to the mini-language, not to any manifest.
+1. ~~**No iteration.**~~ **Closed August 5, 2026.** `*@/path` repeats a subtree once per
+   item, `@./field` resolves against the current item, and a control inside a repeat carries
+   its own payload bindings so each row sends its own item (compilation-rules §2). The
+   candidate-list shape is now expressible; what it still lacks is an agent to live in.
 2. **Thin catalog.** The renderer knows `Card`, `Column`, `Row`, `Text`, `LineChart`,
    `NumberField`, `Button` ([`components/a2ui-renderer.tsx`](../components/a2ui-renderer.tsx)).
-   No image, chip, list, or date control — which the wanted patterns need.
+   No image, chip, list, or date control — which the wanted patterns need. Left open
+   deliberately: components are cheap to add, and adding them before a real pattern needs
+   them is guessing at props.
 3. **No pattern parameters beyond variations.** A pattern can vary *what is shown*
    (`?ui-state`) but not *what it is about*: `value-check` hardcodes `kg`. Reuse across
    agents needs either a parameter slot or a convention for renaming binds.

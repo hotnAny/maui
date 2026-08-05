@@ -125,9 +125,13 @@ export function A2UIRenderer({ messages, eventBindings, onEvent, disabled }: Pro
     return ids;
   }, [components]);
 
-  function emit(name: string) {
+  function emit(source: A2UIComponent) {
+    if (!source.action) return;
+    const { name, bindings } = source.action.event;
     const payload: Record<string, unknown> = {};
-    for (const [key, path] of Object.entries(eventBindings[name] ?? {})) {
+    // A control expanded from a repeat carries row-scoped bindings; otherwise the
+    // surface-level map applies.
+    for (const [key, path] of Object.entries(bindings ?? eventBindings[name] ?? {})) {
       payload[key] = resolvePath(model, path);
     }
     onEvent(name, payload);
@@ -136,9 +140,9 @@ export function A2UIRenderer({ messages, eventBindings, onEvent, disabled }: Pro
   function onFieldKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key !== "Enter") return;
     const button = components.find((component) => component.action);
-    if (button?.action) {
+    if (button) {
       event.preventDefault();
-      emit(button.action.event.name);
+      emit(button);
     }
   }
 
@@ -196,7 +200,7 @@ export function A2UIRenderer({ messages, eventBindings, onEvent, disabled }: Pro
             type="button"
             className="a2ui-button"
             disabled={disabled}
-            onClick={() => component.action && emit(component.action.event.name)}
+            onClick={() => emit(component)}
           >
             {interpolate(String(component.text ?? ""), model)}
           </button>

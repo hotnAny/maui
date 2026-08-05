@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { interpolate, resolvePath, setPath } from "./a2ui";
 import { agentRequestSchema } from "../schemas";
 import { advance, judgmentConfig, needsJudgment, outgoing, stateConfig } from "./fsm";
+import type { Pattern } from "./manifest";
 import { loadManifest, parsePatternCall, transitionsOf } from "./manifest";
 import { compileLayout, compileSurface, eventBindings } from "./pattern-compiler";
 import { DIAGRAM_LEGEND, GENERATED_HEADER, mermaidOf, renderReadme } from "./readme";
@@ -87,6 +88,71 @@ describe("pattern compiler", () => {
 
   it("rejects a UI state the pattern does not declare", () => {
     expect(() => compileLayout(pattern, "with-goal")).toThrow(/no UI state with-goal/);
+  });
+});
+
+describe("pattern compiler — repeats", () => {
+  // The shape every selection task needs: N candidates, one select action per row.
+  const candidates: Pattern = {
+    id: "candidate-list",
+    desc: "pick one of several options",
+    states: [],
+    binds: ["/venues/candidates"],
+    layout: [
+      "Card #root:",
+      "  Column:",
+      '    Text #title: "pick a venue"',
+      "    *@/venues/candidates Row #venue:",
+      '      Text #name: "{@./name}"',
+      '      Button #pick: "Choose" -> event select_venue',
+    ].join("\n"),
+    events: ["select_venue(id=@./id)"],
+    fallback: "candidates available",
+  };
+  const model = {
+    venues: { candidates: [{ id: "v1", name: "the park" }, { id: "v2", name: "the hall" }] },
+  };
+
+  it("emits one copy of the subtree per item, with unique ids", () => {
+    const components = compileLayout(candidates, null, model);
+    const ids = components.map((component) => component.id);
+    expect(ids).toEqual(["root", "column-1", "title", "venue-0", "name-0", "pick-0", "venue-1", "name-1", "pick-1"]);
+    expect(components.find((component) => component.id === "column-1")?.children).toEqual([
+      "title", "venue-0", "venue-1",
+    ]);
+  });
+
+  it("scopes @./field to the row it was expanded under", () => {
+    const byId = Object.fromEntries(compileLayout(candidates, null, model).map((c) => [c.id, c]));
+    expect(byId["name-0"].text).toBe("{/venues/candidates/0/name}");
+    expect(byId["name-1"].text).toBe("{/venues/candidates/1/name}");
+  });
+
+  it("gives each row's control its own payload bindings", () => {
+    const byId = Object.fromEntries(compileLayout(candidates, null, model).map((c) => [c.id, c]));
+    // every row emits the same event name, so the payload can only differ per component
+    expect(byId["pick-0"].action).toEqual({
+      event: { name: "select_venue", bindings: { id: "/venues/candidates/0/id" } },
+    });
+    expect(byId["pick-1"].action?.event.bindings).toEqual({ id: "/venues/candidates/1/id" });
+  });
+
+  it("renders nothing for an empty or missing list", () => {
+    expect(compileLayout(candidates, null, { venues: { candidates: [] } }).map((c) => c.id)).toEqual([
+      "root", "column-1", "title",
+    ]);
+    expect(compileLayout(candidates, null, {}).map((c) => c.id)).toEqual(["root", "column-1", "title"]);
+  });
+
+  it("keeps item-relative bindings out of the surface-level map", () => {
+    const surface = compileSurface(
+      { ...manifest, genui: { ...manifest.genui, patterns: [candidates] } },
+      "candidate-list",
+      "main",
+      model,
+    );
+    // `./id` means nothing without a row; the components carry those bindings instead
+    expect(surface.eventBindings).toEqual({});
   });
 });
 

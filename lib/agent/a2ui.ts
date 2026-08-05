@@ -9,7 +9,9 @@ export type A2UIComponent = {
   component: string;
   child?: string;
   children?: string[];
-  action?: { event: { name: string } };
+  // `bindings` is a maui extension: a control expanded from a `*@/path` repeat resolves its
+  // payload against its own row, since every row emits the same event name.
+  action?: { event: { name: string; bindings?: Record<string, string> } };
 } & Record<string, unknown>;
 
 export type A2UIMessage =

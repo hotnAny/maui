@@ -1,14 +1,16 @@
 import type { A2UIComponent, A2UIMessage } from "./a2ui";
+import { resolvePath } from "./a2ui";
 import type { Manifest, Pattern, PatternCall } from "./manifest";
 import { parsePatternCall, patternOf } from "./manifest";
 
 // Compiles the pattern mini-language (see .agent/compilation-rules.md §2) into A2UI
 // messages. Grammar per layout line:
-//   [?ui-state[|ui-state…] ]Component[ #id][: rest]
+//   [*@/path ][?ui-state[|ui-state…] ]Component[ #id][: rest]
 // where rest is a quoted primary text, and/or `key=value` props (value: @/path binding,
 // "quoted" literal, number, bool), and/or a trailing `-> event <name>`.
 
-type Line = { indent: number; text: string };
+/** `scope` is the item path a line was expanded under, if it came from a `*@/path` repeat. */
+type Line = { indent: number; text: string; scope?: string };
 
 const PRIMARY_TEXT_PROP: Record<string, string> = { Text: "text", Button: "text" };
 
@@ -41,14 +43,69 @@ function splitProps(rest: string): string[] {
   return parts;
 }
 
-export function compileLayout(pattern: Pattern, uiState: string | null): A2UIComponent[] {
+/** Rewrite `@./field` (item-relative) to the absolute path of one item of a repeat. */
+function scopePaths(text: string, itemPath: string) {
+  return text.replaceAll("@./", `@${itemPath}/`);
+}
+
+/** Suffix explicit `#id`s so each instance of a repeated subtree gets unique ids. */
+function suffixIds(text: string, index: number) {
+  return text.replace(/#([\w-]+)/g, `#$1-${index}`);
+}
+
+/**
+ * Expand `*@/path` repeats into one copy of the subtree per item, as a source-to-source
+ * transform: everything after this sees ordinary lines. Nested repeats fall out of the
+ * loop, because an inner `*@./sub` becomes `*@/path/0/sub` once its parent expands.
+ */
+function expandRepeats(lines: Line[], dataModel: Record<string, unknown>): Line[] {
+  let current = lines;
+  for (let guard = 0; guard < 10; guard += 1) {
+    const at = current.findIndex((line) => line.text.startsWith("*@/"));
+    if (at < 0) return current;
+
+    const header = current[at];
+    const marker = header.text.slice(1).split(/\s+/)[0]; // `@/venues/candidates`
+    const listPath = marker.slice(1);
+    const body = header.text.slice(1 + marker.length).trim();
+    let end = at + 1;
+    while (end < current.length && current[end].indent > header.indent) end += 1;
+    const block = current.slice(at + 1, end);
+
+    const items = resolvePath(dataModel, listPath);
+    const expanded: Line[] = [];
+    if (Array.isArray(items)) {
+      items.forEach((_, index) => {
+        const itemPath = `${listPath}/${index}`;
+        expanded.push({ indent: header.indent, text: scopePaths(suffixIds(body, index), itemPath), scope: itemPath });
+        for (const line of block) {
+          expanded.push({
+            indent: line.indent,
+            text: scopePaths(suffixIds(line.text, index), itemPath),
+            scope: line.scope ?? itemPath,
+          });
+        }
+      });
+    }
+    current = [...current.slice(0, at), ...expanded, ...current.slice(end)];
+  }
+  throw new Error("Layout repeats nested more than 10 deep");
+}
+
+export function compileLayout(
+  pattern: Pattern,
+  uiState: string | null,
+  dataModel: Record<string, unknown> = {},
+): A2UIComponent[] {
   if (uiState !== null && pattern.states.length && !pattern.states.includes(uiState)) {
     throw new Error(`Pattern ${pattern.id} declares no UI state ${uiState}`);
   }
-  const lines: Line[] = pattern.layout
+  const authored: Line[] = pattern.layout
     .split("\n")
     .filter((line) => line.trim().length > 0)
     .map((line) => ({ indent: line.length - line.trimStart().length, text: line.trim() }));
+  const lines = expandRepeats(authored, dataModel);
+  const bindings = eventBindings(pattern);
 
   const components: A2UIComponent[] = [];
   const autoIds = new Map<string, number>();
@@ -88,7 +145,17 @@ export function compileLayout(pattern: Pattern, uiState: string | null): A2UICom
     let props = rest;
     const eventMatch = props.match(/->\s*event\s+(\w+)\s*$/);
     if (eventMatch) {
-      node.action = { event: { name: eventMatch[1] } };
+      const name = eventMatch[1];
+      node.action = { event: { name } };
+      // A control inside a repeat carries its own bindings: every row emits the same event
+      // name, so the payload can only be told apart per component.
+      if (line.scope) {
+        const scoped = Object.entries(bindings[name] ?? {}).map(([key, path]) => [
+          key,
+          path.startsWith("./") ? `${line.scope}${path.slice(1)}` : path,
+        ]);
+        if (scoped.length) node.action.event.bindings = Object.fromEntries(scoped);
+      }
       props = props.slice(0, eventMatch.index).trim();
     }
     for (const part of splitProps(props)) {
@@ -113,7 +180,11 @@ export function compileLayout(pattern: Pattern, uiState: string | null): A2UICom
   return components;
 }
 
-/** Parse `events:` entries like `log_weight(kg=@/entry/kg)` into payload bindings. */
+/**
+ * Parse `events:` entries like `log_weight(kg=@/entry/kg)` into payload bindings.
+ * `@./field` is item-relative — only meaningful for a control inside a `*@/path` repeat,
+ * where the compiler resolves it per instance.
+ */
 export function eventBindings(pattern: Pattern): Record<string, Record<string, string>> {
   const bindings: Record<string, Record<string, string>> = {};
   for (const entry of pattern.events) {
@@ -122,12 +193,26 @@ export function eventBindings(pattern: Pattern): Record<string, Record<string, s
     const payload: Record<string, string> = {};
     for (const pair of (match[2] ?? "").split(",").filter(Boolean)) {
       const [key, raw] = pair.split("=").map((part) => part.trim());
-      if (!raw?.startsWith("@/")) throw new Error(`Event payload must bind a @/path: ${entry}`);
+      if (!raw?.startsWith("@/") && !raw?.startsWith("@./")) {
+        throw new Error(`Event payload must bind a @/path or @./path: ${entry}`);
+      }
       payload[key] = raw.slice(1);
     }
     bindings[match[1]] = payload;
   }
   return bindings;
+}
+
+/** Item-relative bindings mean nothing outside their row; the components carry those. */
+function surfaceBindings(pattern: Pattern) {
+  return Object.fromEntries(
+    Object.entries(eventBindings(pattern))
+      .map(([name, payload]) => [
+        name,
+        Object.fromEntries(Object.entries(payload).filter(([, path]) => !path.startsWith("./"))),
+      ])
+      .filter(([, payload]) => Object.keys(payload as Record<string, string>).length > 0),
+  ) as Record<string, Record<string, string>>;
 }
 
 export type CompiledSurface = {
@@ -146,8 +231,8 @@ export function compileSurface(
   const pattern = patternOf(manifest, patternId);
   const messages: A2UIMessage[] = [
     { createSurface: { surfaceId, catalogId: manifest.genui.catalog } },
-    { updateComponents: { surfaceId, components: compileLayout(pattern, uiState) } },
+    { updateComponents: { surfaceId, components: compileLayout(pattern, uiState, dataModel) } },
     { updateDataModel: { surfaceId, path: "/", value: dataModel } },
   ];
-  return { messages, fallback: rewriteInterpolation(pattern.fallback), eventBindings: eventBindings(pattern) };
+  return { messages, fallback: rewriteInterpolation(pattern.fallback), eventBindings: surfaceBindings(pattern) };
 }

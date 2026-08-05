@@ -63,7 +63,7 @@ new run at `initial`. Persistence belongs to the surface, not the machine.
 
 ## 2. Pattern language → A2UI
 
-Five language rules, total:
+Six language rules, total:
 
 - **`Component #id`** — a catalog component plus a stable id. Nesting in `layout:` is
   authoring sugar; the compiler flattens it into A2UI's id-referenced flat component list.
@@ -74,8 +74,19 @@ Five language rules, total:
   variations in `states:`; a machine state binds one (`trend-line-dashboard[with-input]`).
   One pattern serves multiple machine states this way. Both directions are checked: an
   undeclared `?name`, and a binding to an undeclared variation, are compile errors.
+- **`*@/path`** — repeat: the line's subtree is emitted once per item of the list at
+  `path`, and `@./field` inside it resolves against the current item. Explicit ids gain a
+  `-<index>` suffix (`#venue` → `venue-0`, `venue-1`), so A2UI's flat list stays unique. An
+  empty or missing list emits nothing — the parent renders without those children. Expansion
+  happens at compile time, which is consistent with R3: the runtime re-materializes data and
+  re-sends the surface on every state entry, so a static tree per surface is enough.
 - **`-> event name`** — an interactive control declares the event it emits; compiles to
-  A2UI `"action": {"event": {"name": "…"}}`.
+  A2UI `"action": {"event": {"name": "…"}}`. Inside a repeat, every row emits the *same*
+  event name, so the name alone cannot say which row fired: the compiler resolves that row's
+  `@./` bindings and attaches them to the component as
+  `"action": {"event": {"name": "…", "bindings": {…}}}`. The client prefers a component's
+  own bindings over the surface-level map. (`bindings` is a maui extension to the A2UI
+  action shape — check it against the gallery before targeting a real A2UI client.)
 - **`fallback:`** — required; the prose rendering when no A2UI client is present (also the
   accessibility text, and part of the state's prompt fragment per R2).
 
