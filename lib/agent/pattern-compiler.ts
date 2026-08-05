@@ -4,7 +4,7 @@ import { parsePatternCall, patternOf } from "./manifest";
 
 // Compiles the pattern mini-language (see .agent/compilation-rules.md §2) into A2UI
 // messages. Grammar per layout line:
-//   [?param ]Component[ #id][: rest]
+//   [?ui-state[|ui-state…] ]Component[ #id][: rest]
 // where rest is a quoted primary text, and/or `key=value` props (value: @/path binding,
 // "quoted" literal, number, bool), and/or a trailing `-> event <name>`.
 
@@ -41,7 +41,10 @@ function splitProps(rest: string): string[] {
   return parts;
 }
 
-export function compileLayout(pattern: Pattern, params: Record<string, boolean | string>): A2UIComponent[] {
+export function compileLayout(pattern: Pattern, uiState: string | null): A2UIComponent[] {
+  if (uiState !== null && pattern.states.length && !pattern.states.includes(uiState)) {
+    throw new Error(`Pattern ${pattern.id} declares no UI state ${uiState}`);
+  }
   const lines: Line[] = pattern.layout
     .split("\n")
     .filter((line) => line.trim().length > 0)
@@ -58,12 +61,18 @@ export function compileLayout(pattern: Pattern, params: Record<string, boolean |
     const pruned = stack.length > 0 && parent === null;
 
     let text = line.text;
-    let conditional: string | undefined;
+    let conditional: string[] | undefined;
     if (text.startsWith("?")) {
-      conditional = text.slice(1).split(/\s+/)[0];
-      text = text.slice(1 + conditional.length).trim();
+      const marker = text.slice(1).split(/\s+/)[0];
+      text = text.slice(1 + marker.length).trim();
+      conditional = marker.split("|");
+      for (const name of conditional) {
+        if (!pattern.states.includes(name)) {
+          throw new Error(`Pattern ${pattern.id} layout conditions on undeclared UI state ${name}`);
+        }
+      }
     }
-    if (pruned || (conditional && !params[conditional])) {
+    if (pruned || (conditional && (uiState === null || !conditional.includes(uiState)))) {
       stack.push({ indent: line.indent, node: null });
       continue;
     }
@@ -133,11 +142,11 @@ export function compileSurface(
   surfaceId: string,
   dataModel: Record<string, unknown>,
 ): CompiledSurface {
-  const { patternId, params } = typeof call === "string" ? parsePatternCall(call) : call;
+  const { patternId, uiState } = typeof call === "string" ? parsePatternCall(call) : call;
   const pattern = patternOf(manifest, patternId);
   const messages: A2UIMessage[] = [
     { createSurface: { surfaceId, catalogId: manifest.genui.catalog } },
-    { updateComponents: { surfaceId, components: compileLayout(pattern, params) } },
+    { updateComponents: { surfaceId, components: compileLayout(pattern, uiState) } },
     { updateDataModel: { surfaceId, path: "/", value: dataModel } },
   ];
   return { messages, fallback: rewriteInterpolation(pattern.fallback), eventBindings: eventBindings(pattern) };
